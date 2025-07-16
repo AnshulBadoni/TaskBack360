@@ -1,0 +1,205 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Users {
+  id               Int        @id @default(autoincrement())
+  username         String     @unique
+  email            String     @unique
+  role             String?
+  password         String
+  compcode         String
+  avatar           String?
+  isOnline         Boolean    @default(false)
+  lastSeen         DateTime?
+  rooms            Projects[] @relation("UserRooms")
+  sentMessages     Message[]  @relation("SentMessages")
+  receivedMessages Message[]  @relation("ReceivedMessages")
+  createdTasks     Tasks[]    @relation("CreatedTasks")
+
+  // Multi-user task assignments
+  taskAssignments TaskAssignment[]
+
+  // Direct message conversations
+  conversationsInitiated Conversation[] @relation("ConversationInitiator")
+  conversationsReceived  Conversation[] @relation("ConversationReceiver")
+
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  MessageRead MessageRead[]
+}
+
+model Projects {
+  id          Int       @id @default(autoincrement())
+  name        String
+  description String
+  isPrivate   Boolean   @default(false)
+  users       Users[]   @relation("UserRooms")
+  messages    Message[] @relation("ProjectMessages")
+  tasks       Tasks[]
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+model Tasks {
+  id               Int               @id @default(autoincrement())
+  name             String
+  description      String
+  status           Status
+  dueDate          DateTime
+  assignedBy       Users             @relation("CreatedTasks", fields: [assignedById], references: [id], onDelete: Cascade)
+  assignedById     Int
+  
+  // Multi-user assignments through junction table
+  taskAssignments  TaskAssignment[]
+  
+  project          Projects          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  projectId        Int
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  TaskConversation TaskConversation?
+}
+
+// Junction table for many-to-many task assignments
+model TaskAssignment {
+  id       Int   @id @default(autoincrement())
+  task     Tasks @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  taskId   Int
+  user     Users @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId   Int
+  
+  // Assignment metadata
+  assignedAt DateTime @default(now())
+  status     AssignmentStatus @default(ASSIGNED)
+  
+  @@unique([taskId, userId])
+  @@index([taskId])
+  @@index([userId])
+}
+
+// Enhanced Message model
+model Message {
+  id          Int         @id @default(autoincrement())
+  content     String
+  messageType MessageType @default(TEXT)
+  fileUrl     String? // For file attachments
+  fileName    String? // Original file name
+  fileSize    Int? // File size in bytes
+
+  // Message status
+  status MessageStatus @default(SENT)
+  readBy MessageRead[]
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  editedAt  DateTime? // For message editing
+
+  // Sender info - CASCADE DELETE
+  sender   Users @relation("SentMessages", fields: [senderId], references: [id], onDelete: Cascade)
+  senderId Int
+
+  // For direct messages - CASCADE DELETE
+  receiver       Users?        @relation("ReceivedMessages", fields: [receiverId], references: [id], onDelete: Cascade)
+  receiverId     Int?
+  conversation   Conversation? @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  conversationId Int?
+
+  // For group/project messages - CASCADE DELETE
+  project   Projects? @relation("ProjectMessages", fields: [projectId], references: [id], onDelete: Cascade)
+  projectId Int?
+
+  // Reply functionality - SET NULL when parent message is deleted
+  replyTo            Message?          @relation("MessageReplies", fields: [replyToId], references: [id], onDelete: SetNull)
+  replyToId          Int?
+  replies            Message[]         @relation("MessageReplies")
+  TaskConversation   TaskConversation? @relation(fields: [taskConversationId], references: [id])
+  taskConversationId Int?
+
+  @@index([projectId, createdAt])
+  @@index([conversationId, createdAt])
+  @@index([senderId, createdAt])
+}
+
+// for task conversation or comments
+model TaskConversation {
+  id        Int       @id @default(autoincrement())
+  task      Tasks     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  taskId    Int
+  messages  Message[]
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@unique([taskId])
+}
+
+// For direct message conversations
+model Conversation {
+  id            Int       @id @default(autoincrement())
+  initiator     Users     @relation("ConversationInitiator", fields: [initiatorId], references: [id], onDelete: Cascade)
+  initiatorId   Int
+  receiver      Users     @relation("ConversationReceiver", fields: [receiverId], references: [id], onDelete: Cascade)
+  receiverId    Int
+  messages      Message[]
+  lastMessage   String? // Cache for performance
+  lastMessageAt DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@unique([initiatorId, receiverId])
+  @@index([initiatorId, updatedAt])
+  @@index([receiverId, updatedAt])
+}
+
+// Track message read status
+model MessageRead {
+  id        Int      @id @default(autoincrement())
+  message   Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  messageId Int
+  reader    Users    @relation(fields: [readerId], references: [id], onDelete: Cascade)
+  readerId  Int
+  readAt    DateTime @default(now())
+
+  @@unique([messageId, readerId])
+}
+
+enum Status {
+  OPEN
+  IN_PROGRESS
+  REVIEW
+  DONE
+  OVERDUE
+  CANCELLED
+}
+
+enum MessageType {
+  TEXT
+  IMAGE
+  FILE
+  AUDIO
+  VIDEO
+  SYSTEM // For system messages like "User joined room"
+}
+
+enum MessageStatus {
+  SENT
+  DELIVERED
+  READ
+  FAILED
+}
+
+enum AssignmentStatus {
+  ASSIGNED
+  ACCEPTED
+  DECLINED
+  COMPLETED
+}

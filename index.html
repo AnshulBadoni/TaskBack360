@@ -1,0 +1,163 @@
+<!doctype html>
+<html>
+    <head>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Socket.IO Chat</title>
+        <style>
+            body {
+                margin: 0;
+                padding-bottom: 3rem;
+                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI",
+                    Roboto, Helvetica, Arial, sans-serif;
+                background-color: #f4f4f4;
+            }
+
+            #chat-container {
+                max-width: 800px;
+                margin: auto;
+                padding: 1rem;
+            }
+
+            #form,
+            #room {
+                background: rgba(0, 0, 0, 0.15);
+                padding: 0.5rem;
+                position: fixed;
+                bottom: 0;
+                left: 0;
+                right: 0;
+                display: flex;
+                gap: 5px;
+                height: 3rem;
+                box-sizing: border-box;
+                backdrop-filter: blur(10px);
+            }
+
+            input {
+                border: none;
+                padding: 0 1rem;
+                flex-grow: 1;
+                border-radius: 20px;
+                margin: 0.25rem;
+            }
+
+            input:focus {
+                outline: none;
+            }
+
+            button {
+                background: #007bff;
+                border: none;
+                padding: 0 1rem;
+                margin: 0.25rem;
+                border-radius: 3px;
+                color: #fff;
+                cursor: pointer;
+            }
+
+            #messages {
+                list-style-type: none;
+                margin: 0;
+                padding: 1rem;
+                display: flex;
+                flex-direction: column;
+                gap: 10px;
+            }
+
+            .message {
+                padding: 0.75rem 1rem;
+                border-radius: 10px;
+                max-width: 60%;
+                word-wrap: break-word;
+            }
+
+            .my-message {
+                background-color: lightblue;
+                align-self: flex-end;
+                text-align: right;
+            }
+
+            .other-message {
+                background-color: lightgreen;
+                align-self: flex-start;
+                text-align: left;
+            }
+        </style>
+    </head>
+    <body>
+        <div id="chat-container">
+            <ul id="messages"></ul>
+        </div>
+
+        <!-- Private Chat -->
+        <form id="form">
+            <input id="input" placeholder="Type private message..." autocomplete="off" />
+            <button type="submit">Send</button>
+        </form>
+
+        <!-- Project Room Chat -->
+        <form id="room">
+            <input id="roomname" placeholder="Enter room name" autocomplete="off" />
+            <input id="msg" placeholder="Message for the room" autocomplete="off" />
+            <button type="submit">Join & Send</button>
+        </form>
+
+        <script src="https://cdn.socket.io/4.8.1/socket.io.min.js"></script>
+        <script>
+            const socket = io();
+
+            const form = document.getElementById("form");
+            const input = document.getElementById("input");
+            const messages = document.getElementById("messages");
+            const room = document.getElementById("room");
+            const roomname = document.getElementById("roomname");
+            const msg = document.getElementById("msg");
+
+            // Private Messaging
+            form.addEventListener("submit", (e) => {
+                e.preventDefault();
+                if (input.value.trim()) {
+                    const messageData = {
+                        to: "receiver-id", // Replace this with actual receiver ID if needed
+                        message: input.value,
+                        from: socket.id,
+                    };
+
+                    socket.emit("privateMessage", messageData);
+                    addMessage(input.value, "my-message");
+                    input.value = "";
+                }
+            });
+
+            socket.on("privateMessage", (data) => {
+                console.log("Private Message Received:", data);
+                addMessage(data.message, "other-message");
+            });
+
+            // Project Room Messaging
+            room.addEventListener("submit", (e) => {
+                e.preventDefault();
+                if (roomname.value.trim() && msg.value.trim()) {
+                    const roomData = { roomname: roomname.value, message: msg.value };
+                    socket.emit("joinRoom", roomData);
+                    addMessage(`Me (Room: ${roomname.value}): ${msg.value}`, "my-message");
+                    roomname.value = "";
+                    msg.value = "";
+                }
+            });
+
+            socket.on("chat-message", (data) => {
+                console.log("Chat Message Received:", data);
+                addMessage(`(Room: ${data.room}) ${data.message}`, "other-message");
+            });
+
+            function addMessage(text, className) {
+                const item = document.createElement("li");
+                item.textContent = text;
+                item.classList.add("message", className);
+                messages.appendChild(item);
+                window.scrollTo(0, document.body.scrollHeight);
+            }
+        </script>
+    </body>
+</html>
