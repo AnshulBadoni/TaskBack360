@@ -5,6 +5,7 @@ import { Tasks } from "@prisma/client";
 import { getOrSetCache } from "../Services/cache";
 import { deleteCache, resolveToken } from "../utils";
 import { setResponse } from "../DTO";
+import { updateProject } from "./projectController";
 
 async function isTaskExists(taskId: number): Promise<Tasks | null> {
   return prisma.tasks.findUnique({
@@ -109,7 +110,7 @@ async function isTaskExists(taskId: number): Promise<Tasks | null> {
 //     res.status(201).json(newTask);
 //   } catch (error) {
 //     console.error("Error creating Task:", error);
-//     res.status(500).json({ error: "Internal Server Error", details: error });
+//        res.status(500).send(setResponse(500, "Internal Server Error", []));
 //   }
 // };
 export const createTask = async (req: Request, res: Response) => {
@@ -148,7 +149,7 @@ export const createTask = async (req: Request, res: Response) => {
       assignees.length === 0
     ) {
       console.log(assignees, Array.isArray(assignees), assignees.length === 0,"error")
-      res.status(400).json({ error: "All fields are required and assignees must be a non-empty array" });
+      res.status(400).send(setResponse(res.statusCode, "All fields are required and assignees must be a non-empty array", []));
       return
     }
 
@@ -172,13 +173,9 @@ export const createTask = async (req: Request, res: Response) => {
     const missingIds = allUserIds.filter(id => !foundUserIds.includes(id));
 
     if (missingIds.length > 0) {
-       res.status(400).json({ 
-        error: `Invalid user IDs: ${missingIds.join(', ')}`,
-        details: {
-          providedIds: allUserIds,
-          foundIds: foundUserIds
-        }
-      });
+       res.status(400).send(setResponse(400,
+        `Invalid user IDs: ${missingIds.join(', ')}`,
+        []));
       return
     }
 
@@ -233,13 +230,10 @@ export const createTask = async (req: Request, res: Response) => {
 
     await deleteCache(...cacheKeysToDelete);
 
-    res.status(201).json(newTask);
+    res.status(201).send(setResponse(res.statusCode, "Task created successfully", newTask));;
   } catch (error) {
     console.error("Error creating Task:", error);
-    res.status(500).json({
-      error: "Internal Server Error",
-      message: error instanceof Error ? error.message : "Unknown error",
-    });
+    res.status(500).send(setResponse(500, "Internal Server Error", []));
   }
 };
 
@@ -263,10 +257,10 @@ export const getAllTasks = async (req: Request, res: Response) => {
       600
     );
 
-    res.status(200).json(tasks);
+    res.status(200).send(setResponse(res.statusCode, "Tasks fetched successfully", tasks));
   } catch (error) {
     console.error("Error fetching Tasks:", error);
-    res.status(500).json({ error: "Internal Server Error", details: error });
+    res.status(500).send(setResponse(500, "Internal Server Error", [])); 
   }
 };
 
@@ -372,7 +366,7 @@ export const getProjectTasks = async (req: Request, res: Response) => {
     }
     const { projectId } = req.params;
     if (isNaN(Number(projectId))) {
-      res.status(400).json({ error: "Invalid project ID" });
+      res.status(400).send(setResponse(res.statusCode, "Invalid project ID", []));
       return;
     }
 
@@ -393,7 +387,7 @@ export const getProjectTasks = async (req: Request, res: Response) => {
         })
     );
     
-    res.status(200).json(setResponse(200, "Tasks found", tasks));
+    res.status(200).send(setResponse(200, "Tasks found", tasks));
   } catch (error) {
     console.error("Error fetching Tasks:", error);
     res.status(500).send(setResponse(500, "Internal Server Error", []));
@@ -423,14 +417,14 @@ export const getTask = async (req: Request, res: Response) => {
     );
 
     if (!task || task.length === 0) {
-      res.status(404).json({ error: "Task not found" });
+      res.status(404).send(setResponse(res.statusCode, "Task not found", []));
       return;
     }
 
-    res.status(200).json(task);
+    res.status(200).send(setResponse(200, "Task found", task));
   } catch (error) {
     console.error("Error fetching Task:", error);
-    res.status(500).json({ error: "Internal Server Error", details: error });
+    res.status(500).send(setResponse(500, "Internal Server Error",[]));
   }
 };
 
@@ -585,7 +579,7 @@ export const updateTask = async (req: Request, res: Response) => {
     res.status(200).send(setResponse(200, "Task updated", updatedTask));
   } catch (error) {
     console.error("Error updating Task:", error);
-    res.status(500).json({ error: "Internal Server Error", details: error });
+    res.status(500).send(setResponse(500, "Internal Server Error", [])); 
   }
 };
 export const deleteTask = async (req: Request, res: Response) => {
@@ -594,7 +588,7 @@ export const deleteTask = async (req: Request, res: Response) => {
     const token = req.headers.authorization?.split(" ")[1];
 
     if (!token) {
-      res.status(401).json({ error: "Unauthorized" });
+      res.status(401).send(setResponse(res.statusCode, "Unauthorized by token", [])); 
       return;
     }
 
@@ -613,7 +607,7 @@ export const deleteTask = async (req: Request, res: Response) => {
     });
 
     if (!existingTask) {
-      res.status(404).json({ error: "Task not found" });
+      res.status(404).send(setResponse(res.statusCode, "Task not found", []));
       return;
     }
 
@@ -638,20 +632,16 @@ export const deleteTask = async (req: Request, res: Response) => {
 
     await deleteCache(...cacheKeysToDelete);
 
-    res.status(200).json({ 
-      message: "Task deleted successfully",
-      deletedTask: {
+    res.status(200).send(setResponse(res.statusCode, "Task deleted successfully", [
+      {
         id: existingTask.id,
         name: existingTask.name,
         projectId: existingTask.projectId
       }
-    });
+    ]));
   } catch (error) {
     console.error("Error deleting Task:", error);
-    res.status(500).json({ 
-      error: "Internal Server Error",
-      message: error instanceof Error ? error.message : "Unknown error",
-    });
+    res.status(500).send(setResponse(500, "Internal Server Error", []));
   }
 };
 
@@ -660,7 +650,7 @@ export const unassignTask = async (req: Request, res: Response) => {
     const { taskId, userId } = req.params;
 
     if (!taskId || !userId) {
-      res.status(400).json({ error: "Task ID and User ID are required" });
+      res.status(400).send(setResponse(400, "Task ID and User ID are required", []));
       return;
     }
 
@@ -680,22 +670,17 @@ export const unassignTask = async (req: Request, res: Response) => {
       `tasks:project:${assignment.taskId}`
     );
 
-    res.status(200).json({
-      message: "User unassigned from task successfully"
-    });
+    res.status(200).send(setResponse(200, "User unassigned from task successfully", []));
   } catch (error) {
     console.error("Error unassigning user from task:", error);
-    res.status(500).json({
-      error: "Error unassigning user from task",
-      details: error instanceof Error ? error.message : "Unknown error"
-    });
+    res.status(500).send(setResponse(500, "Internal Server Error", []));
   }
 };
 export const assignTask = async (req: Request, res: Response) => {
   try {
     const token = req.headers.authorization?.split(" ")[1];
     if (!token) {
-      res.status(401).json({ error: "Unauthorized" });
+      res.status(401).send(setResponse(res.statusCode, "Unauthorized", []));
       return;
     }
 
@@ -703,7 +688,7 @@ export const assignTask = async (req: Request, res: Response) => {
     const { userIds } = req.body; // Array of user IDs to assign
 
     if (!taskId || !userIds || !Array.isArray(userIds)) {
-      res.status(400).json({ error: "Task ID and user IDs array are required" });
+      res.status(400).send(setResponse(400, "Task ID and user IDs array are required", []));
       return;
     }
 
@@ -712,7 +697,7 @@ export const assignTask = async (req: Request, res: Response) => {
       where: { id: Number(taskId) }
     });
     if (!task) {
-      res.status(404).json({ error: "Task not found" });
+      res.status(404).send(setResponse(404, "Task not found",[]));
       return;
     }
 
@@ -724,7 +709,7 @@ export const assignTask = async (req: Request, res: Response) => {
 
     if (users.length !== userIds.length) {
       const missingIds = userIds.filter(id => !users.some(user => user.id === Number(id)));
-      res.status(400).json({ error: `Invalid user IDs: ${missingIds.join(', ')}` });
+      res.status(400).send(setResponse(400, `Invalid user IDs: ${missingIds.join(', ')}` ,[]));
       return;
     }
 
@@ -757,12 +742,9 @@ export const assignTask = async (req: Request, res: Response) => {
       `tasks:project:${task.projectId}`
     );
 
-    res.status(200).json({
-      message: "Users assigned to task successfully",
-      task: updatedTask,
-    });
+    res.status(200).send(setResponse(200, "Users assigned to task successfully", updateProject));
   } catch (error) {
     console.error("Error assigning users to task:", error);
-    res.status(500).json({ error: "Error assigning users to task", details: error });
+    res.status(500).send(setResponse(500, "Internal Server Error", []));
   }
 };

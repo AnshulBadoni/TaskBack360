@@ -2,7 +2,6 @@ import { Request, Response } from "express";
 import prisma from "../Connection/prisma";
 import { getOrSetCache } from "../Services/cache";
 import { deleteCache, resolveToken } from "../utils";
-import jwt from 'jsonwebtoken';
 import { setResponse } from "../DTO";
 
 // Consistent cache key generators
@@ -21,7 +20,7 @@ export const createUserProject = async (req: Request, res: Response) => {
 
     // Validate required fields
     if (!name || !description) {
-      res.status(400).json({ error: "Name and description are required" });
+      res.status(400).send(setResponse(400, "Name and description are required" ,[]));
       return;
     }
 
@@ -88,7 +87,7 @@ export const createProject = async (req: Request, res: Response) => {
 
     // Validate required fields
     if (!name || !description) {
-      res.status(400).json({ error: "Name and description are required" });
+      res.status(400).send(setResponse(400, "Name and description are required" ,[]));
       return;
     }
 
@@ -134,7 +133,7 @@ export const getUserProjects = async (req: Request, res: Response) => {
   try {
     const token = req.headers.authorization?.split(" ")[1];
     if (!token) {
-      res.status(401).json({ error: "Unauthorized" });
+      res.status(401).send(setResponse(401, "Unauthorized" ,[]));
       return;
     }
 

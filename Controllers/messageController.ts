@@ -1,9 +1,6 @@
 import { Request, Response } from "express";
-import bcrypt from "bcrypt";
-import jwt from "jsonwebtoken";
 import prisma from "../Connection/prisma";
 import { setResponse } from "../DTO";
-import { resolve } from "path";
 import { resolveToken } from "../utils";
 
 export const sendMessage = async (req: Request, res: Response) => {
@@ -19,12 +16,13 @@ export const sendMessage = async (req: Request, res: Response) => {
         },
       });
 
-      res.status(201).json(newMessage);
+      res.status(201).send(setResponse(res.statusCode, "Message sent successfully", newMessage));
     } catch (error) {
       console.error("Error saving message:", error);
-      res.status(500).json({ error: "Internal Server Error" });
+      res.status(500).send(setResponse(500, "Internal Server Error", [])); 
     }
   };
+
 
   export const getMessages = async (req: Request, res: Response) => {
     try {
@@ -44,14 +42,14 @@ export const sendMessage = async (req: Request, res: Response) => {
           orderBy: { createdAt: "asc" },
         });
       } else {
-        res.status(400).json({ error: "Invalid query parameters" });
+        res.status(400).send(setResponse(400, "Invalid query parameters", [])); 
         return;
       }
 
-      res.status(200).json(messages);
+      res.status(200).send(setResponse(res.statusCode, "Messages fetched successfully", messages));
     } catch (error) {
       console.error("Error fetching messages:", error);
-      res.status(500).json({ error: "Internal Server Error" });
+      res.status(500).send(setResponse(500, "Internal Server Error", []));     
     }
   };
 
@@ -86,6 +84,6 @@ export const getUserAllConversations = async (req: Request, res: Response) => {
     res.status(200).send(setResponse(res.statusCode, "Messages fetched successfully", messages));
   } catch (error) {
     console.error("Error fetching messages:", error);
-    res.status(500).json({ error: "Internal Server Error" });
+    res.status(500).send(setResponse(500, "Internal Server Error", []));  
   }
 };

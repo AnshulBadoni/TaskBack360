@@ -3,6 +3,7 @@ import { pub, sub } from "./resdisPubSub";
 import { createAdapter } from "@socket.io/redis-adapter";
 import { PrismaClient } from "@prisma/client";
 import jwt from "jsonwebtoken";
+import { setResponse } from "../DTO";
 
 
 const prisma = new PrismaClient();
@@ -110,7 +111,7 @@ export const initializeSocket = (httpServer: any) => {
     });
   });
 
-  // In your socket initialization
+  // socket initialization
   io.on('connection', (socket: AuthenticatedSocket) => {
     console.log(`User connected: ${socket.username} (${socket.id})`);
 
@@ -125,13 +126,33 @@ export const initializeSocket = (httpServer: any) => {
         io.emit('userStatusChange', { 
             userId: socket.userId, 
             isOnline: true,
-            onlineUsers: Array.from(onlineUsers) // Send the complete list
+            onlineUsers: Array.from(onlineUsers)
         });
 
         // Send the current online users list to the newly connected user
         socket.emit('onlineUsersList', Array.from(onlineUsers));
     }
 
+    socket.on('getFriendList', async () => {
+      console.log(`User ${socket.username} requested friend list`);
+      try {
+        const friends = await prisma.users.findMany({
+          where: {
+            id: { in: Array.from(onlineUsers) }
+          },
+          select: { id: true, username: true, avatar: true }
+        });
+        socket.emit('friendList', friends);
+      } catch (error) {
+        console.error('Error fetching friend list:', error);
+        socket.emit('friendList', []);
+      }
+    });
+
+    socket.on('getOnlineUsers', () => {
+      console.log(`User ${socket.username} requested online users list`);
+      socket.emit('onlineUsersList', Array.from(onlineUsers));
+    });
 
     // Updated joinTaskRoom handler
     socket.on('joinTaskRoom', async (data: JoinRoomData) => {
@@ -255,7 +276,6 @@ export const initializeSocket = (httpServer: any) => {
       }
     })
 
-
     // Handle room joining
     socket.on('joinRoom', async (data: JoinRoomData) => {
       try {
@@ -304,7 +324,7 @@ export const initializeSocket = (httpServer: any) => {
               }
             },
             orderBy: { createdAt: 'asc' },
-            take: 50 // Limit to last 50 messages
+            take: 50 
           });
           socket.emit('messageHistory', { messages, roomType: 'direct' });
         }
@@ -452,6 +472,10 @@ export const initializeSocket = (httpServer: any) => {
               lastMessageAt: new Date()
             }
           });
+
+        // update the friends list of user to whom we are sending the message
+          const friends = await findMyFriends(senderId);
+          socket.emit('getNewFriends', friends)
         }
       } catch (error) {
         console.error('Error sending message:', error);
@@ -575,6 +599,7 @@ export const initializeSocket = (httpServer: any) => {
                 isOnline: false,
                 onlineUsers: Array.from(onlineUsers) // Send the complete list
             });
+            
         }
 
         // Clean up any pending chunks
@@ -603,3 +628,53 @@ export const sendNotificationToUser = (userId: number, notification: any) => {
 export const isUserOnline = (userId: number): boolean => {
   return userSockets.has(userId);
 };
+
+const findMyFriends = async (userId: number) => {
+
+    // Get all unique conversation partners
+    const conversations = await prisma.conversation.findMany({
+      where: {
+        OR: [
+          { initiatorId: Number(userId) },
+          { receiverId: Number(userId) }
+        ]
+      },
+      select: {
+        initiatorId: true,
+        receiverId: true
+      },
+      distinct: ['initiatorId', 'receiverId']
+    });
+
+    // Extract friend IDs (excluding current user) with null checks
+    const friendIds = conversations
+      .map(conv => {
+        const otherId = conv.initiatorId === Number(userId) ? conv.receiverId : conv.initiatorId;
+        return otherId !== Number(userId) ? otherId : null;
+      })
+      .filter((id): id is number => id !== null); // Type guard to ensure number[]
+
+    // Get unique friend IDs
+    const uniqueFriendIds = Array.from(new Set(friendIds));
+
+    if (uniqueFriendIds.length === 0) {
+      return []
+    }
+
+    // Get user details for all friends
+    const users = await prisma.users.findMany({
+      where: {
+        id: {
+          in: uniqueFriendIds
+        }
+      },
+      select: {
+        id: true,
+        username: true,
+        email: true,
+        avatar: true,
+      }
+    });
+
+     return users
+}
