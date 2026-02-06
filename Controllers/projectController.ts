@@ -221,6 +221,39 @@ export const getProject = async (req: Request, res: Response) => {
   }
 };
 
+
+// get project by id
+export const getProjectById = async (req: Request, res: Response) => {
+  try {
+    const token = req.headers.authorization?.split(" ")[1];
+    if (!token) {
+      res.status(401).send(setResponse(401, "Unauthorized", []));
+      return;
+    }
+
+    const { id } = req.params;
+
+    const project = await prisma.projects.findUnique({
+      where: { id: Number(id) },
+      include: { 
+        users: { 
+          select: { id: true, username: true, email: true, role: true, avatar: true } 
+        } 
+      },
+    });
+
+    if (!project) {
+      res.status(404).send(setResponse(404, "Project not found", []));
+      return;
+    }
+
+    res.status(200).send(setResponse(200, "Project found", project));
+  } catch (error) {
+    console.error("Error fetching project:", error);
+    res.status(500).send(setResponse(500, "Internal Server Error", []));
+  }
+};
+
 // Update project
 export const updateProject = async (req: Request, res: Response) => {
   try {
