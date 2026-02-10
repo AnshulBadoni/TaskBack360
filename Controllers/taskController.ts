@@ -770,6 +770,7 @@ export const getRecentTaskActivity = async (req: Request, res: Response) => {
     const activity = await getOrSetCache(
       cacheKey,
       async () => {
+        /* ----------------------------- TASK ACTIVITY ----------------------------- */
         const tasks = await prisma.tasks.findMany({
           where: {
             OR: [
@@ -778,19 +779,13 @@ export const getRecentTaskActivity = async (req: Request, res: Response) => {
               { project: { users: { some: { id: userId } } } }
             ]
           },
-          select: {
-            id: true,
-            name: true,
-            createdAt: true,
-            updatedAt: true,
-            project: {
-              select: { id: true, name: true }
-            }
+          include: {
+            project: { select: { id: true, name: true } }
           }
         });
 
         const taskActivity = tasks.flatMap(task => {
-          const events: any[] = [
+          const items: any[] = [
             {
               type: "TASK",
               action: "CREATED",
@@ -803,7 +798,7 @@ export const getRecentTaskActivity = async (req: Request, res: Response) => {
           ];
 
           if (task.updatedAt.getTime() !== task.createdAt.getTime()) {
-            events.push({
+            items.push({
               type: "TASK",
               action: "UPDATED",
               taskId: task.id,
@@ -814,12 +809,13 @@ export const getRecentTaskActivity = async (req: Request, res: Response) => {
             });
           }
 
-          return events;
+          return items;
         });
 
+        /* -------------------------- TASK CONVERSATION MSGS -------------------------- */
         const taskMessages = await prisma.message.findMany({
           where: {
-            taskConversation: {
+            TaskConversation: {
               task: {
                 OR: [
                   { assignedById: userId },
@@ -830,15 +826,12 @@ export const getRecentTaskActivity = async (req: Request, res: Response) => {
           },
           orderBy: { createdAt: "desc" },
           take: limit,
-          select: {
-            id: true,
-            content: true,
-            createdAt: true,
+          include: {
             sender: {
               select: { id: true, username: true }
             },
-            taskConversation: {
-              select: {
+            TaskConversation: {
+              include: {
                 task: {
                   select: { id: true, projectId: true }
                 }
@@ -852,11 +845,12 @@ export const getRecentTaskActivity = async (req: Request, res: Response) => {
           messageId: msg.id,
           content: msg.content,
           sender: msg.sender,
-          taskId: msg.taskConversation?.task.id,
-          projectId: msg.taskConversation?.task.projectId,
+          taskId: msg.TaskConversation?.task.id,
+          projectId: msg.TaskConversation?.task.projectId,
           createdAt: msg.createdAt
         }));
 
+        /* ---------------------------- PROJECT MESSAGES ----------------------------- */
         const projectMessages = await prisma.message.findMany({
           where: {
             project: {
@@ -866,14 +860,10 @@ export const getRecentTaskActivity = async (req: Request, res: Response) => {
           },
           orderBy: { createdAt: "desc" },
           take: limit,
-          select: {
-            id: true,
-            content: true,
-            createdAt: true,
+          include: {
             sender: {
               select: { id: true, username: true }
-            },
-            projectId: true
+            }
           }
         });
 
@@ -886,6 +876,7 @@ export const getRecentTaskActivity = async (req: Request, res: Response) => {
           createdAt: msg.createdAt
         }));
 
+        /* ------------------------------ MERGE & SORT ------------------------------ */
         return [...taskActivity, ...taskMessageActivity, ...projectMessageActivity]
           .sort(
             (a, b) =>
@@ -897,9 +888,7 @@ export const getRecentTaskActivity = async (req: Request, res: Response) => {
       300
     );
 
-    res
-      .status(200)
-      .send(setResponse(200, "Recent activity fetched", activity));
+    res.status(200).send(setResponse(200, "Recent activity fetched", activity));
   } catch (error) {
     console.error("Recent activity error:", error);
     res.status(500).send(setResponse(500, "Internal Server Error", []));
