@@ -21,98 +21,21 @@ async function isTaskExists(taskId: number): Promise<Tasks | null> {
     }
   });
 }
-// export const createTask = async (req: Request, res: Response) => {
-//   try {
-//     const {
-//       name,
-//       description,
-//       status,
-//       dueDate,
-//       assignedBy,
-//       assignedTo,
-//       projectId,
-//     }: {
-//       name: string;
-//       description: string;
-//       status: string;
-//       dueDate: string;
-//       assignedBy: number;
-//       assignedTo: number;
-//       projectId: number;
-//     } = req.body;
 
-//     if (
-//       !name ||
-//       !description ||
-//       !status ||
-//       !dueDate ||
-//       !assignedBy ||
-//       !assignedTo ||
-//       !projectId
-//     ) {
-//       res.status(400).json({ error: "All fields are required" });
-//       return;
-//     }
+function getRangeStart(range: string): Date {
+  const now = new Date();
 
-//     const users = await prisma.users.findMany({
-//       where: { id: { in: [Number(assignedBy), Number(assignedTo)] } },
-//       select: { id: true },
-//     });
+  switch (range) {
+    case "daily":
+      return new Date(now.setDate(now.getDate() - 1));
+    case "monthly":
+      return new Date(now.setMonth(now.getMonth() - 1));
+    case "weekly":
+    default:
+      return new Date(now.setDate(now.getDate() - 7));
+  }
+}
 
-//     if (users.length < 1) {
-//       res.status(400).json({ error: "Invalid assignedBy or assignedTo ID" });
-//       return;
-//     }
-
-//     const newTask = await prisma.tasks.create({
-//       data: {
-//         name,
-//         description,
-//         status: status.toUpperCase() as Status,
-//         dueDate: new Date(dueDate),
-//         assignedBy: { connect: { id: Number(assignedBy) } },
-//         assignedTo: { connect: { id: Number(assignedTo) } },
-//         project: { connect: { id: Number(projectId) } },
-//       },
-//       include: {
-//         assignedBy: true,
-//         assignedTo: true,
-//         project: true,
-//       },
-//     });
-
-//     await prisma.projects.update({
-//       where: { id: Number(projectId) },
-//       data: {
-//         users: {
-//           connect: [
-//             { id: Number(assignedBy) },
-//             { id: Number(assignedTo) }
-//           ]
-//         }
-//       }
-//     });
-
-//     // Clear all relevant cache keys
-//     await deleteCache(
-//       "tasks:all",
-//       `tasks:name:${newTask.name}`,
-//       `tasks:user:${newTask.assignedById}`,
-//       `tasks:user:${newTask.assignedToId}`,
-//       // Add project cache invalidation
-//       "projects:all",
-//       `projects:name:${newTask.project.name}`,
-//       `projects:user:${newTask.assignedById}`,
-//       `projects:user:${newTask.assignedToId}`
-//     );
-//     // await setKafka("task-events", "task-created", newTask);
-
-//     res.status(201).json(newTask);
-//   } catch (error) {
-//     console.error("Error creating Task:", error);
-//        res.status(500).send(setResponse(500, "Internal Server Error", []));
-//   }
-// };
 export const createTask = async (req: Request, res: Response) => {
   try {
     const token = req.headers.authorization?.split(" ")[1];
@@ -751,6 +674,7 @@ export const assignTask = async (req: Request, res: Response) => {
 
 export const getRecentTaskActivity = async (req: Request, res: Response) => {
   try {
+    /* ------------------------------ AUTH ------------------------------ */
     const token = req.headers.authorization?.split(" ")[1];
     if (!token) {
       res.status(401).send(setResponse(401, "Unauthorized", []));
@@ -763,20 +687,33 @@ export const getRecentTaskActivity = async (req: Request, res: Response) => {
       return;
     }
 
-    const limit = Number(req.query.limit) || 20;
+    /* --------------------------- QUERY PARAMS -------------------------- */
+    const range = String(req.query.range || "weekly"); // daily | weekly | monthly
+    const limit = Number(req.query.limit || 20);
+    const fromDate = getRangeStart(range);
 
-    const cacheKey = `activity:user:${userId}:limit:${limit}`;
+    const cacheKey = `activity:user:${userId}:range:${range}:limit:${limit}`;
 
     const activity = await getOrSetCache(
       cacheKey,
       async () => {
-        /* ----------------------------- TASK ACTIVITY ----------------------------- */
+        /* ============================= TASKS ============================= */
         const tasks = await prisma.tasks.findMany({
           where: {
-            OR: [
-              { assignedById: userId },
-              { taskAssignments: { some: { userId } } },
-              { project: { users: { some: { id: userId } } } }
+            AND: [
+              {
+                OR: [
+                  { assignedById: userId },
+                  { taskAssignments: { some: { userId } } },
+                  { project: { users: { some: { id: userId } } } }
+                ]
+              },
+              {
+                OR: [
+                  { createdAt: { gte: fromDate } },
+                  { updatedAt: { gte: fromDate } }
+                ]
+              }
             ]
           },
           include: {
@@ -785,7 +722,7 @@ export const getRecentTaskActivity = async (req: Request, res: Response) => {
         });
 
         const taskActivity = tasks.flatMap(task => {
-          const items: any[] = [
+          const events: any[] = [
             {
               type: "TASK",
               action: "CREATED",
@@ -798,7 +735,7 @@ export const getRecentTaskActivity = async (req: Request, res: Response) => {
           ];
 
           if (task.updatedAt.getTime() !== task.createdAt.getTime()) {
-            items.push({
+            events.push({
               type: "TASK",
               action: "UPDATED",
               taskId: task.id,
@@ -809,12 +746,13 @@ export const getRecentTaskActivity = async (req: Request, res: Response) => {
             });
           }
 
-          return items;
+          return events;
         });
 
-        /* -------------------------- TASK CONVERSATION MSGS -------------------------- */
+        /* ====================== TASK CONVERSATION ====================== */
         const taskMessages = await prisma.message.findMany({
           where: {
+            createdAt: { gte: fromDate },
             TaskConversation: {
               task: {
                 OR: [
@@ -850,13 +788,13 @@ export const getRecentTaskActivity = async (req: Request, res: Response) => {
           createdAt: msg.createdAt
         }));
 
-        /* ---------------------------- PROJECT MESSAGES ----------------------------- */
+        /* ======================= PROJECT MESSAGES ======================= */
         const projectMessages = await prisma.message.findMany({
           where: {
+            createdAt: { gte: fromDate },
             project: {
               users: { some: { id: userId } }
-            },
-            projectId: { not: null }
+            }
           },
           orderBy: { createdAt: "desc" },
           take: limit,
@@ -876,7 +814,7 @@ export const getRecentTaskActivity = async (req: Request, res: Response) => {
           createdAt: msg.createdAt
         }));
 
-        /* ------------------------------ MERGE & SORT ------------------------------ */
+        /* ======================= MERGE & SORT ======================= */
         return [...taskActivity, ...taskMessageActivity, ...projectMessageActivity]
           .sort(
             (a, b) =>
@@ -888,7 +826,14 @@ export const getRecentTaskActivity = async (req: Request, res: Response) => {
       300
     );
 
-    res.status(200).send(setResponse(200, "Recent activity fetched", activity));
+    res.status(200).send(
+      setResponse(200, "Recent activity fetched", {
+        range,
+        fromDate,
+        count: activity.length,
+        items: activity
+      })
+    );
   } catch (error) {
     console.error("Recent activity error:", error);
     res.status(500).send(setResponse(500, "Internal Server Error", []));
