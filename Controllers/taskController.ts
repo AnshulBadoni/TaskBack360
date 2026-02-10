@@ -748,3 +748,160 @@ export const assignTask = async (req: Request, res: Response) => {
     res.status(500).send(setResponse(500, "Internal Server Error", []));
   }
 };
+
+export const getRecentTaskActivity = async (req: Request, res: Response) => {
+  try {
+    const token = req.headers.authorization?.split(" ")[1];
+    if (!token) {
+      res.status(401).send(setResponse(401, "Unauthorized", []));
+      return;
+    }
+
+    const userId = Number(resolveToken(token));
+    if (!userId) {
+      res.status(401).send(setResponse(401, "Unauthorized", []));
+      return;
+    }
+
+    const limit = Number(req.query.limit) || 20;
+
+    const cacheKey = `activity:user:${userId}:limit:${limit}`;
+
+    const activity = await getOrSetCache(
+      cacheKey,
+      async () => {
+        const tasks = await prisma.tasks.findMany({
+          where: {
+            OR: [
+              { assignedById: userId },
+              { taskAssignments: { some: { userId } } },
+              { project: { users: { some: { id: userId } } } }
+            ]
+          },
+          select: {
+            id: true,
+            name: true,
+            createdAt: true,
+            updatedAt: true,
+            project: {
+              select: { id: true, name: true }
+            }
+          }
+        });
+
+        const taskActivity = tasks.flatMap(task => {
+          const events: any[] = [
+            {
+              type: "TASK",
+              action: "CREATED",
+              taskId: task.id,
+              taskName: task.name,
+              projectId: task.project.id,
+              projectName: task.project.name,
+              createdAt: task.createdAt
+            }
+          ];
+
+          if (task.updatedAt.getTime() !== task.createdAt.getTime()) {
+            events.push({
+              type: "TASK",
+              action: "UPDATED",
+              taskId: task.id,
+              taskName: task.name,
+              projectId: task.project.id,
+              projectName: task.project.name,
+              createdAt: task.updatedAt
+            });
+          }
+
+          return events;
+        });
+
+        const taskMessages = await prisma.message.findMany({
+          where: {
+            taskConversation: {
+              task: {
+                OR: [
+                  { assignedById: userId },
+                  { taskAssignments: { some: { userId } } }
+                ]
+              }
+            }
+          },
+          orderBy: { createdAt: "desc" },
+          take: limit,
+          select: {
+            id: true,
+            content: true,
+            createdAt: true,
+            sender: {
+              select: { id: true, username: true }
+            },
+            taskConversation: {
+              select: {
+                task: {
+                  select: { id: true, projectId: true }
+                }
+              }
+            }
+          }
+        });
+
+        const taskMessageActivity = taskMessages.map(msg => ({
+          type: "TASK_MESSAGE",
+          messageId: msg.id,
+          content: msg.content,
+          sender: msg.sender,
+          taskId: msg.taskConversation?.task.id,
+          projectId: msg.taskConversation?.task.projectId,
+          createdAt: msg.createdAt
+        }));
+
+        const projectMessages = await prisma.message.findMany({
+          where: {
+            project: {
+              users: { some: { id: userId } }
+            },
+            projectId: { not: null }
+          },
+          orderBy: { createdAt: "desc" },
+          take: limit,
+          select: {
+            id: true,
+            content: true,
+            createdAt: true,
+            sender: {
+              select: { id: true, username: true }
+            },
+            projectId: true
+          }
+        });
+
+        const projectMessageActivity = projectMessages.map(msg => ({
+          type: "PROJECT_MESSAGE",
+          messageId: msg.id,
+          content: msg.content,
+          sender: msg.sender,
+          projectId: msg.projectId,
+          createdAt: msg.createdAt
+        }));
+
+        return [...taskActivity, ...taskMessageActivity, ...projectMessageActivity]
+          .sort(
+            (a, b) =>
+              new Date(b.createdAt).getTime() -
+              new Date(a.createdAt).getTime()
+          )
+          .slice(0, limit);
+      },
+      300
+    );
+
+    res
+      .status(200)
+      .send(setResponse(200, "Recent activity fetched", activity));
+  } catch (error) {
+    console.error("Recent activity error:", error);
+    res.status(500).send(setResponse(500, "Internal Server Error", []));
+  }
+};
