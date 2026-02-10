@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { assignTask, createTask, deleteTask, getAllTasks, getTask, unassignTask, updateTask, getUserProjectTasks, getUserProjectTasksByProjectId, getProjectTasks } from '../Controllers/taskController';
+import { assignTask, createTask, deleteTask, getAllTasks, getTask, unassignTask, updateTask, getUserProjectTasks, getUserProjectTasksByProjectId, getProjectTasks, getRecentTaskActivity } from '../Controllers/taskController';
 
 const router = Router();
 
@@ -27,5 +27,6 @@ router.post('/assignTask/:id/:userId', assignTask);
 
 router.delete('/unassignTask/:id/:userId', unassignTask);
 
+router.get("/activity/recent", getRecentTaskActivity);
 
 export default router;
