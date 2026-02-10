@@ -7,6 +7,8 @@ router.post('/', (req, res) => {
     res.send(req.body);
 })
 
+router.get("/activity/recent", getRecentTaskActivity);
+
 router.post('/createTask', createTask);
 
 router.get('/getAllTasks', getAllTasks);
@@ -26,7 +28,5 @@ router.delete('/deleteTask/:id', deleteTask);
 router.post('/assignTask/:id/:userId', assignTask);
 
 router.delete('/unassignTask/:id/:userId', unassignTask);
-
-router.get("/activity/recent", getRecentTaskActivity);
 
 export default router;
