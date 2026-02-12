@@ -7,7 +7,7 @@ import { resolveToken } from "../utils";
 
 export const signUp = async (req: Request, res: Response) => {
   try {
-    const { username, email, role="", compcode, avatar="", password } = req.body;
+    const { username, email, role = "", compcode, avatar = "", password } = req.body;
 
     const user = await prisma.users.create({
       data: {
@@ -32,7 +32,7 @@ export const signUp = async (req: Request, res: Response) => {
         maxAge: 1 * 24 * 60 * 60 * 1000,
         httpOnly: true,
       });
-      res.status(201).send(setResponse (res.statusCode, "User created", user));
+      res.status(201).send(setResponse(res.statusCode, "User created", user));
     } else {
       res.status(409).send(setResponse(res.statusCode, "User not created", []));
     }
@@ -70,12 +70,12 @@ export const signIn = async (req: Request, res: Response) => {
         return
       }
       else {
-        res.status(401).send(setResponse(res.statusCode, "Login Failed" ,"Invalid Email or Password"));
+        res.status(401).send(setResponse(res.statusCode, "Login Failed", "Invalid Email or Password"));
         return
       }
     } else {
 
-      res.status(409).send(setResponse(res.statusCode, "Login Failed" ,"Authentication failed"));
+      res.status(409).send(setResponse(res.statusCode, "Login Failed", "Authentication failed"));
     }
   } catch (error) {
     res.status(500).send(setResponse(res.statusCode, "Login Server Error", error));
@@ -126,13 +126,13 @@ export const getUsers = async (req: Request, res: Response) => {
   try {
     const token = req.headers.authorization?.split(" ")[1];
 
-    if(!token){
+    if (!token) {
       res.status(401).send(setResponse(res.statusCode, "Unauthorized", []));
       return;
     }
     const userId = resolveToken(token);
 
-    if(!userId){
+    if (!userId) {
       res.status(401).send(setResponse(res.statusCode, "Unauthorized", []));
       return
     }
@@ -141,7 +141,7 @@ export const getUsers = async (req: Request, res: Response) => {
         id: Number(userId),
       },
     })
-    if(comp?.username?.toLocaleLowerCase() == "anshul badoni"){
+    if (comp?.username?.toLocaleLowerCase() == "anshul badoni") {
       const users = await prisma.users.findMany();
       res.status(200).send(users);
       return
@@ -161,7 +161,7 @@ export const getUserImage = async (req: Request, res: Response) => {
   try {
     const token = req.headers.authorization?.split(" ")[1];
 
-    if(!token){
+    if (!token) {
       res.status(401).send(setResponse(res.statusCode, "Unauthorized", []));
       return;
     }
@@ -170,7 +170,7 @@ export const getUserImage = async (req: Request, res: Response) => {
 
     const user = await prisma.users.findUnique({
       where: {
-        id : Number(userId),
+        id: Number(userId),
       },
     });
     if (user) {
@@ -187,23 +187,23 @@ export const updateUserProfile = async (req: Request, res: Response) => {
   try {
     const token = req.headers.authorization?.split(" ")[1];
 
-    if(!token){
+    if (!token) {
       res.status(401).send(setResponse(res.statusCode, "Unauthorized", []));
       return;
     }
 
     const userId = resolveToken(token);
 
-    if (!userId){
+    if (!userId) {
       res.status(401).send(setResponse(res.statusCode, "Unauthorized", []));
       return;
     }
     const user = await prisma.users.findUnique({
       where: {
-        id : Number(userId),
+        id: Number(userId),
       },
     });
-    if(!user){
+    if (!user) {
       res.status(404).send(setResponse(res.statusCode, "User not found", []));
       return;
     }
@@ -218,7 +218,7 @@ export const updateUserProfile = async (req: Request, res: Response) => {
         username: username,
         email: email,
         avatar: avatar,
-        role: role,  
+        role: role,
         compcode: compcode
       },
     });
@@ -269,7 +269,11 @@ export const getFriends = async (req: Request, res: Response) => {
       return;
     }
 
-    // Get all unique conversation partners
+    const { limit = "20", page = "1" } = req.query;
+    const take = parseInt(limit as string, 10);
+    const skip = (parseInt(page as string, 10) - 1) * take;
+
+    // Get conversations with pagination and include user details
     const conversations = await prisma.conversation.findMany({
       where: {
         OR: [
@@ -277,45 +281,50 @@ export const getFriends = async (req: Request, res: Response) => {
           { receiverId: Number(userId) }
         ]
       },
-      select: {
-        initiatorId: true,
-        receiverId: true
+      include: {
+        initiator: {
+          select: {
+            id: true,
+            username: true,
+            email: true,
+            avatar: true,
+          }
+        },
+        receiver: {
+          select: {
+            id: true,
+            username: true,
+            email: true,
+            avatar: true,
+          }
+        }
       },
-      distinct: ['initiatorId', 'receiverId']
+      orderBy: {
+        updatedAt: 'desc'
+      },
+      take,
+      skip,
     });
 
-    // Extract friend IDs (excluding current user) with null checks
-    const friendIds = conversations
-      .map(conv => {
-        const otherId = conv.initiatorId === Number(userId) ? conv.receiverId : conv.initiatorId;
-        return otherId !== Number(userId) ? otherId : null;
-      })
-      .filter((id): id is number => id !== null); // Type guard to ensure number[]
-
-    // Get unique friend IDs
-    const uniqueFriendIds = Array.from(new Set(friendIds));
-
-    if (uniqueFriendIds.length === 0) {
+    if (conversations.length === 0) {
       res.status(200).send(setResponse(res.statusCode, "you currently have no friends", []));
       return
     }
 
-    // Get user details for all friends
-    const users = await prisma.users.findMany({
-      where: {
-        id: {
-          in: uniqueFriendIds
-        }
-      },
-      select: {
-        id: true,
-        username: true,
-        email: true,
-        avatar: true,
-      }
+    // Format the response to return friends with their last message
+    const formattedFriends = conversations.map(conv => {
+      const isInitiator = conv.initiatorId === Number(userId);
+      const friend = isInitiator ? conv.receiver : conv.initiator;
+
+      return {
+        ...friend,
+        lastMessage: conv.lastMessage,
+        lastMessageAt: conv.lastMessageAt,
+        conversationId: conv.id
+      };
     });
 
-     res.status(200).send(setResponse(res.statusCode, "friends found", users));
+    res.status(200).send(setResponse(res.statusCode, "friends found", formattedFriends));
   } catch (error) {
     console.error("Error fetching chat users:", error);
     res.status(500).send(setResponse(res.statusCode, "Error fetching chat users", []));
