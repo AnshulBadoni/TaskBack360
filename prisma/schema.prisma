@@ -37,6 +37,10 @@ model Users {
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt
   MessageRead MessageRead[]
+
+  // GitHub OAuth
+  githubId          String?   @unique
+  githubAccessToken String?
 }
 
 model Projects {
@@ -49,6 +53,8 @@ model Projects {
   tasks       Tasks[]
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
+
+  githubRepo  String?   // "owner/repo"
 }
 
 model Tasks {
@@ -68,6 +74,10 @@ model Tasks {
   createdAt        DateTime          @default(now())
   updatedAt        DateTime          @updatedAt
   TaskConversation TaskConversation?
+
+  // GitHub Sync
+  githubIssueId     Int?      @unique
+  githubIssueNumber Int?
 }
 
 // Junction table for many-to-many task assignments

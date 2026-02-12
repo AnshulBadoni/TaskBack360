@@ -116,21 +116,25 @@ export const initializeSocket = (httpServer: any) => {
     console.log(`User connected: ${socket.username} (${socket.id})`);
 
     if (socket.userId) {
-        // Add user to onlineUsers and userSockets
-        onlineUsers.add(socket.userId);
-        userSockets.set(socket.userId, socket.id);
-        
-        console.log('Online users:', Array.from(onlineUsers));
-        
-        // Broadcast updated online users list to ALL connected clients
-        io.emit('userStatusChange', { 
-            userId: socket.userId, 
-            isOnline: true,
-            onlineUsers: Array.from(onlineUsers)
-        });
+      // Add user to onlineUsers and userSockets
+      onlineUsers.add(socket.userId);
+      userSockets.set(socket.userId, socket.id);
 
-        // Send the current online users list to the newly connected user
-        socket.emit('onlineUsersList', Array.from(onlineUsers));
+      console.log('Online users:', Array.from(onlineUsers));
+
+      // Broadcast updated online users list to ALL connected clients
+      io.emit('userStatusChange', {
+        userId: socket.userId,
+        isOnline: true,
+        onlineUsers: Array.from(onlineUsers)
+      });
+
+      // Send the current online users list to the newly connected user
+      socket.emit('onlineUsersList', Array.from(onlineUsers));
+
+      // Join a personal room for targeted notification/message emission
+      socket.join(`user-${socket.userId}`);
+      console.log(`User joined personal room: user-${socket.userId}`);
     }
 
     socket.on('getFriendList', async () => {
@@ -324,7 +328,7 @@ export const initializeSocket = (httpServer: any) => {
               }
             },
             orderBy: { createdAt: 'asc' },
-            take: 50 
+            take: 50
           });
           socket.emit('messageHistory', { messages, roomType: 'direct' });
         }
@@ -464,6 +468,11 @@ export const initializeSocket = (httpServer: any) => {
           // Emit to all users in the direct room
           io.to(roomIdStr).emit('newMessage', newMessage);
 
+          // Also emit to the recipient's personal room to ensure they get it 
+          // even if not currently "in" this specific direct room
+          const recipientId = userId1 === socket.userId ? userId2 : userId1;
+          io.to(`user-${recipientId}`).emit('newMessage', newMessage);
+
           // Update conversation last message
           await prisma.conversation.update({
             where: { id: conversation.id },
@@ -473,7 +482,7 @@ export const initializeSocket = (httpServer: any) => {
             }
           });
 
-        // update the friends list of user to whom we are sending the message
+          // update the friends list of user to whom we are sending the message
           const friends = await findMyFriends(senderId);
           socket.emit('getNewFriends', friends)
         }
@@ -585,30 +594,30 @@ export const initializeSocket = (httpServer: any) => {
       }
     });
 
-     socket.on('disconnect', () => {
-        console.log(`User disconnected: ${socket.username} (${socket.id})`);
-        if (socket.userId) {
-            onlineUsers.delete(socket.userId);
-            userSockets.delete(socket.userId);
+    socket.on('disconnect', () => {
+      console.log(`User disconnected: ${socket.username} (${socket.id})`);
+      if (socket.userId) {
+        onlineUsers.delete(socket.userId);
+        userSockets.delete(socket.userId);
 
-            console.log('Online users after disconnect:', Array.from(onlineUsers));
-            
-            // Broadcast updated online users list to ALL connected clients
-            io.emit('userStatusChange', { 
-                userId: socket.userId, 
-                isOnline: false,
-                onlineUsers: Array.from(onlineUsers) // Send the complete list
-            });
-            
-        }
+        console.log('Online users after disconnect:', Array.from(onlineUsers));
 
-        // Clean up any pending chunks
-        if (socket.chunks) {
-            console.log(`Cleaning up ${Object.keys(socket.chunks).length} pending file transfers`);
-            delete socket.chunks;
-        }
+        // Broadcast updated online users list to ALL connected clients
+        io.emit('userStatusChange', {
+          userId: socket.userId,
+          isOnline: false,
+          onlineUsers: Array.from(onlineUsers) // Send the complete list
+        });
+
+      }
+
+      // Clean up any pending chunks
+      if (socket.chunks) {
+        console.log(`Cleaning up ${Object.keys(socket.chunks).length} pending file transfers`);
+        delete socket.chunks;
+      }
     });
-});
+  });
 
   return io;
 };
@@ -631,50 +640,50 @@ export const isUserOnline = (userId: number): boolean => {
 
 const findMyFriends = async (userId: number) => {
 
-    // Get all unique conversation partners
-    const conversations = await prisma.conversation.findMany({
-      where: {
-        OR: [
-          { initiatorId: Number(userId) },
-          { receiverId: Number(userId) }
-        ]
-      },
-      select: {
-        initiatorId: true,
-        receiverId: true
-      },
-      distinct: ['initiatorId', 'receiverId']
-    });
+  // Get all unique conversation partners
+  const conversations = await prisma.conversation.findMany({
+    where: {
+      OR: [
+        { initiatorId: Number(userId) },
+        { receiverId: Number(userId) }
+      ]
+    },
+    select: {
+      initiatorId: true,
+      receiverId: true
+    },
+    distinct: ['initiatorId', 'receiverId']
+  });
 
-    // Extract friend IDs (excluding current user) with null checks
-    const friendIds = conversations
-      .map(conv => {
-        const otherId = conv.initiatorId === Number(userId) ? conv.receiverId : conv.initiatorId;
-        return otherId !== Number(userId) ? otherId : null;
-      })
-      .filter((id): id is number => id !== null); // Type guard to ensure number[]
+  // Extract friend IDs (excluding current user) with null checks
+  const friendIds = conversations
+    .map(conv => {
+      const otherId = conv.initiatorId === Number(userId) ? conv.receiverId : conv.initiatorId;
+      return otherId !== Number(userId) ? otherId : null;
+    })
+    .filter((id): id is number => id !== null); // Type guard to ensure number[]
 
-    // Get unique friend IDs
-    const uniqueFriendIds = Array.from(new Set(friendIds));
+  // Get unique friend IDs
+  const uniqueFriendIds = Array.from(new Set(friendIds));
 
-    if (uniqueFriendIds.length === 0) {
-      return []
-    }
+  if (uniqueFriendIds.length === 0) {
+    return []
+  }
 
-    // Get user details for all friends
-    const users = await prisma.users.findMany({
-      where: {
-        id: {
-          in: uniqueFriendIds
-        }
-      },
-      select: {
-        id: true,
-        username: true,
-        email: true,
-        avatar: true,
+  // Get user details for all friends
+  const users = await prisma.users.findMany({
+    where: {
+      id: {
+        in: uniqueFriendIds
       }
-    });
+    },
+    select: {
+      id: true,
+      username: true,
+      email: true,
+      avatar: true,
+    }
+  });
 
-     return users
+  return users
 }
