@@ -52,7 +52,7 @@ export class GithubService {
                     'User-Agent': 'TaskBack360-App'
                 },
             });
-            return await response.json();
+            return await response.json() as any[];
         } catch (error) {
             console.error("Error fetching GitHub commits:", error);
             return [];
@@ -68,7 +68,7 @@ export class GithubService {
                     'User-Agent': 'TaskBack360-App'
                 },
             });
-            return await response.json();
+            return await response.json() as any[];
         } catch (error) {
             console.error("Error fetching GitHub issues:", error);
             return [];

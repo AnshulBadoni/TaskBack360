@@ -4,15 +4,17 @@ import { GithubService } from "../Services/githubService";
 import { setResponse } from "../DTO";
 import { resolveToken } from "../utils";
 
-export const syncGithubData = async (req: Request, res: Response) => {
+export const syncGithubData = async (req: Request, res: Response): Promise<void> => {
     try {
         const token = req.headers.authorization?.split(" ")[1];
         if (!token) {
-            return res.status(401).send(setResponse(401, "Unauthorized", []));
+            res.status(401).send(setResponse(401, "Unauthorized", []));
+            return;
         }
         const userId = resolveToken(token);
         if (!userId) {
-            return res.status(401).send(setResponse(401, "Invalid token", []));
+            res.status(401).send(setResponse(401, "Invalid token", []));
+            return;
         }
 
         const { projectId } = req.params;
@@ -22,16 +24,19 @@ export const syncGithubData = async (req: Request, res: Response) => {
         });
 
         if (!project) {
-            return res.status(404).send(setResponse(404, "Project not found", []));
+            res.status(404).send(setResponse(404, "Project not found", []));
+            return;
         }
 
         const isMember = project.users.some((u: any) => u.id === Number(userId));
         if (!isMember) {
-            return res.status(403).send(setResponse(403, "Not a project member", []));
+            res.status(403).send(setResponse(403, "Not a project member", []));
+            return;
         }
 
         if (!project.githubRepo) {
-            return res.status(400).send(setResponse(400, "Project has no GitHub repo linked", []));
+            res.status(400).send(setResponse(400, "Project has no GitHub repo linked", []));
+            return;
         }
 
         const user = await prisma.users.findUnique({
@@ -39,7 +44,8 @@ export const syncGithubData = async (req: Request, res: Response) => {
         });
 
         if (!user?.githubAccessToken) {
-            return res.status(400).send(setResponse(400, "User has not connected GitHub", []));
+            res.status(400).send(setResponse(400, "User has not connected GitHub", []));
+            return;
         }
 
         // 1. Sync Commits

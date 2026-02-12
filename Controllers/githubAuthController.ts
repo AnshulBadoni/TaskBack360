@@ -12,21 +12,24 @@ export const redirectToGithub = (req: Request, res: Response) => {
     res.redirect(url);
 };
 
-export const handleGithubCallback = async (req: Request, res: Response) => {
+export const handleGithubCallback = async (req: Request, res: Response): Promise<void> => {
     try {
         const { code } = req.query;
         if (!code) {
-            return res.status(400).send(setResponse(400, "Code is missing", []));
+            res.status(400).send(setResponse(400, "Code is missing", []));
+            return;
         }
 
         const accessToken = await GithubService.getAccessToken(code as string);
         if (!accessToken) {
-            return res.status(401).send(setResponse(401, "Failed to get access token", []));
+            res.status(401).send(setResponse(401, "Failed to get access token", []));
+            return;
         }
 
         const githubUser = await GithubService.getUser(accessToken);
         if (!githubUser) {
-            return res.status(500).send(setResponse(500, "Failed to get GitHub user info", []));
+            res.status(500).send(setResponse(500, "Failed to get GitHub user info", []));
+            return;
         }
 
         let user = await prisma.users.findUnique({
