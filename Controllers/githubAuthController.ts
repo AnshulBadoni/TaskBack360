@@ -1,3 +1,17 @@
+import { Request, Response } from "express";
+import prisma from "../Connection/prisma";
+import { GithubService } from "../Services/githubService";
+import { setResponse } from "../DTO";
+import jwt from "jsonwebtoken";
+
+export const redirectToGithub = (req: Request, res: Response) => {
+    const clientId = process.env.GITHUB_CLIENT_ID;
+    const redirectUri = process.env.GITHUB_CALLBACK_URL;
+    const scope = "user:email repo";
+    const url = `https://github.com/login/oauth/authorize?client_id=${clientId}&redirect_uri=${redirectUri}&scope=${scope}`;
+    res.redirect(url);
+};
+
 export const handleGithubCallback = async (req: Request, res: Response): Promise<void> => {
     try {
         const { code } = req.query;
