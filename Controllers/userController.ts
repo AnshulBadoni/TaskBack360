@@ -330,3 +330,89 @@ export const getFriends = async (req: Request, res: Response) => {
     res.status(500).send(setResponse(res.statusCode, "Error fetching chat users", []));
   }
 }
+
+export const getAllMembers = async (req: Request, res: Response) => {
+  try {
+    const token = req.headers.authorization?.split(" ")[1];
+
+    if (!token) {
+      res.status(401).send(setResponse(401, "Unauthorized", []));
+      return;
+    }
+
+    const userId = resolveToken(token);
+    if (!userId) {
+      res.status(401).send(setResponse(401, "Invalid token", []));
+      return;
+    }
+
+    const currentUser = await prisma.users.findUnique({
+      where: {
+        id: Number(userId),
+      },
+    });
+
+    if (!currentUser) {
+      res.status(404).send(setResponse(404, "User not found", []));
+      return;
+    }
+
+    const { search = "", limit = "50", page = "1" } = req.query;
+    const take = parseInt(limit as string, 10);
+    const skip = (parseInt(page as string, 10) - 1) * take;
+
+    const members = await prisma.users.findMany({
+      where: {
+        compcode: currentUser.compcode,
+        id: { not: Number(userId) },
+        ...(search && {
+          OR: [
+            { username: { contains: search as string, mode: 'insensitive' } },
+            { email: { contains: search as string, mode: 'insensitive' } },
+            { role: { contains: search as string, mode: 'insensitive' } },
+          ],
+        }),
+      },
+      select: {
+        id: true,
+        username: true,
+        email: true,
+        avatar: true,
+        role: true,
+        compcode: true,
+      },
+      orderBy: {
+        username: 'asc',
+      },
+      take,
+      skip,
+    });
+
+    const total = await prisma.users.count({
+      where: {
+        compcode: currentUser.compcode,
+        id: { not: Number(userId) },
+        ...(search && {
+          OR: [
+            { username: { contains: search as string, mode: 'insensitive' } },
+            { email: { contains: search as string, mode: 'insensitive' } },
+            { role: { contains: search as string, mode: 'insensitive' } },
+          ],
+        }),
+      },
+    });
+
+    res.status(200).send(setResponse(200, "Members found", {
+      members,
+      pagination: {
+        total,
+        page: parseInt(page as string, 10),
+        limit: take,
+        totalPages: Math.ceil(total / take),
+      },
+    }));
+  } catch (error) {
+    console.error("Error fetching members:", error);
+    res.status(500).send(setResponse(500, "Error fetching members", []));
+  }
+};
