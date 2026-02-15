@@ -1,17 +1,3 @@
-import { Request, Response } from "express";
-import prisma from "../Connection/prisma";
-import { GithubService } from "../Services/githubService";
-import { setResponse } from "../DTO";
-import jwt from "jsonwebtoken";
-
-export const redirectToGithub = (req: Request, res: Response) => {
-    const clientId = process.env.GITHUB_CLIENT_ID;
-    const redirectUri = process.env.GITHUB_CALLBACK_URL;
-    const scope = "user:email repo";
-    const url = `https://github.com/login/oauth/authorize?client_id=${clientId}&redirect_uri=${redirectUri}&scope=${scope}`;
-    res.redirect(url);
-};
-
 export const handleGithubCallback = async (req: Request, res: Response): Promise<void> => {
     try {
         const { code } = req.query;
@@ -26,6 +12,7 @@ export const handleGithubCallback = async (req: Request, res: Response): Promise
             return;
         }
 
+
         const githubUser = await GithubService.getUser(accessToken);
         if (!githubUser) {
             res.status(500).send(setResponse(500, "Failed to get GitHub user info", []));
@@ -37,7 +24,17 @@ export const handleGithubCallback = async (req: Request, res: Response): Promise
         });
 
         if (!user) {
-            const email = githubUser.email || `${githubUser.login}@github.com`;
+            const emailsResponse = await fetch('https://api.github.com/user/emails', {
+                method: 'GET',
+                headers: { 
+                    'Authorization': `token ${accessToken}`,
+                    'User-Agent': 'TaskBack360-App' // GitHub requires this!
+                }
+            });
+            
+            const emailsData = await emailsResponse.json()
+            const primaryEmail = Array.isArray(emailsData) ? emailsData.find((e: any) => e.primary && e.verified)?.email : null;
+            const email = primaryEmail || githubUser.email || `${githubUser.login}@github.com`;
 
             user = await prisma.users.findUnique({
                 where: { email: email }
