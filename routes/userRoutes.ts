@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { signUp, signIn, getUserImage, getUsers, getFriends, getUser, updateUserProfile } from '../Controllers/userController';
+import { signUp, signIn, getUserImage, getUsers, getFriends, getUser, updateUserProfile, getAllMembers } from '../Controllers/userController';
 import { redirectToGithub, handleGithubCallback } from '../Controllers/githubAuthController';
 import { saveUser } from '../Middlewares/userAuth';
 import { getProjectTasks, getUserProjectTasksByProjectId } from '../Controllers/taskController';
@@ -31,6 +31,8 @@ router.get('/github', redirectToGithub);
 router.get('/github/callback', handleGithubCallback);
 
 router.patch('/updateProfile', updateUserProfile)
+
+router.get('getMembers', getAllMembers)
 
 
 export default router;
