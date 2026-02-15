@@ -32,7 +32,7 @@ router.get('/github/callback', handleGithubCallback);
 
 router.patch('/updateProfile', updateUserProfile)
 
-router.get('getMembers', getAllMembers)
+router.get('/getMembers', getAllMembers)
 
 
 export default router;
