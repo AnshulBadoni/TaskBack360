@@ -1,0 +1,100 @@
+name: Keep Server Alive
+
+on:
+  schedule:
+    - cron: '0 */3 * * *'
+    - cron: '23 */4 * * *'
+  workflow_dispatch:
+
+jobs:
+  ping-server:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Random Initial Delay
+        run: |
+          DELAY=$((RANDOM % 1200))
+          echo "⏳ Random delay: ${DELAY} seconds"
+          sleep $DELAY
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+      
+      - name: Install requests
+        run: pip install requests
+      
+      - name: Hit Random Endpoints
+        run: |
+          python - <<'EOF'
+          import requests
+          import random
+          import time
+          from datetime import datetime
+
+          BASE_URL = "https://taskback360.onrender.com"
+          
+          STATIC_ENDPOINTS = [
+              "/auth/signin",
+              "/tasks/getUserProjectTasks",
+              "/auth/getUserImage",
+          ]
+          
+          def get_endpoints():
+              endpoints = STATIC_ENDPOINTS.copy()
+              for _ in range(random.randint(2, 4)):
+                  project_id = random.randint(0, 10)
+                  endpoints.append(f"/tasks/getProjectTasks/{project_id}")
+              random.shuffle(endpoints)
+              return endpoints
+          
+          def ping_endpoint(url):
+              headers = {
+                  'User-Agent': 'Mozilla/5.0 (GitHub Actions Keep-Alive Bot)',
+                  'Accept': 'application/json'
+              }
+              
+              try:
+                  start = time.time()
+                  response = requests.get(url, headers=headers, timeout=30)
+                  duration = time.time() - start
+                  
+                  status_icon = "✅" if response.status_code < 400 else "⚠️"
+                  print(f"{status_icon} [{response.status_code}] {url} ({duration:.2f}s)")
+                  return True
+                  
+              except requests.exceptions.Timeout:
+                  print(f"⏱️ [TIMEOUT] {url}")
+                  return False
+              except Exception as e:
+                  print(f"❌ [ERROR] {url}: {str(e)}")
+                  return False
+          
+          print("=" * 70)
+          print(f"🚀 Server Keep-Alive Started: {datetime.now().strftime('%Y-%m-%d %H:%M:%S UTC')}")
+          print("=" * 70)
+          
+          all_endpoints = get_endpoints()
+          num_requests = random.randint(3, 6)
+          selected_endpoints = random.sample(all_endpoints, min(num_requests, len(all_endpoints)))
+          
+          print(f"\n📍 Will ping {len(selected_endpoints)} random endpoints:\n")
+          
+          success_count = 0
+          
+          for i, endpoint in enumerate(selected_endpoints, 1):
+              url = f"{BASE_URL}{endpoint}"
+              
+              if i > 1:
+                  delay = random.randint(3, 12)
+                  time.sleep(delay)
+              
+              if ping_endpoint(url):
+                  success_count += 1
+          
+          print("\n" + "=" * 70)
+          print(f"📊 Summary: {success_count}/{len(selected_endpoints)} successful")
+          print(f"✅ Completed: {datetime.now().strftime('%Y-%m-%d %H:%M:%S UTC')}")
+          print("=" * 70)
+          EOF
