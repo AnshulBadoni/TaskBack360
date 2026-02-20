@@ -1,0 +1,118 @@
+  name: Random Server Ping (Advanced)
+
+on:
+  schedule:
+    # Multiple cron schedules for more random timing
+    - cron: '0 */2 * * *'   # Every 2 hours
+    - cron: '23 */3 * * *'  # Every 3 hours at :23
+    - cron: '47 */4 * * *'  # Every 4 hours at :47
+  workflow_dispatch:
+
+jobs:
+  ping-server:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Random Initial Delay
+        run: |
+          # Add random delay at start (0-30 minutes)
+          DELAY=$((RANDOM % 1800))
+          echo "Waiting ${DELAY} seconds before starting..."
+          sleep $DELAY
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.x'
+      
+      - name: Install dependencies
+        run: pip install requests
+      
+      - name: Hit Random Endpoints with Random Timing
+        run: |
+          python - <<'EOF'
+          import requests
+          import random
+          import time
+          from datetime import datetime
+
+          BASE_URL = "https://taskback360.onrender.com"
+          
+          def get_random_endpoints():
+              """Generate random list of endpoints"""
+              static_endpoints = [
+                  "/auth/signin",
+                  "/tasks/getUserProjectTasks",
+                  "/auth/getUserImage",
+              ]
+              
+              # Add dynamic project tasks endpoints
+              dynamic_endpoints = [
+                  f"/tasks/getProjectTasks/{random.randint(0, 10)}"
+                  for _ in range(random.randint(2, 5))
+              ]
+              
+              all_endpoints = static_endpoints + dynamic_endpoints
+              random.shuffle(all_endpoints)
+              return all_endpoints
+          
+          def make_request(url):
+              """Make HTTP request with error handling"""
+              headers = {
+                  'User-Agent': 'GitHub-Actions-Bot/1.0',
+                  'Accept': 'application/json'
+              }
+              
+              try:
+                  response = requests.get(url, headers=headers, timeout=30)
+                  return {
+                      'url': url,
+                      'status': response.status_code,
+                      'time': response.elapsed.total_seconds()
+                  }
+              except Exception as e:
+                  return {
+                      'url': url,
+                      'status': 'ERROR',
+                      'error': str(e)
+                  }
+          
+          # Main execution
+          print(f"🚀 Starting random server ping at {datetime.now()}")
+          print("=" * 60)
+          
+          endpoints = get_random_endpoints()
+          num_requests = random.randint(3, len(endpoints))
+          selected = random.sample(endpoints, num_requests)
+          
+          print(f"Selected {num_requests} random endpoints to hit\n")
+          
+          results = []
+          for i, endpoint in enumerate(selected, 1):
+              url = f"{BASE_URL}{endpoint}"
+              
+              # Random delay between requests (2-15 seconds)
+              if i > 1:
+                  delay = random.randint(2, 15)
+                  print(f"⏳ Waiting {delay}s...")
+                  time.sleep(delay)
+              
+              print(f"\n[{i}/{num_requests}] Hitting: {url}")
+              result = make_request(url)
+              results.append(result)
+              
+              if result['status'] == 'ERROR':
+                  print(f"❌ Error: {result['error']}")
+              else:
+                  print(f"✅ Status: {result['status']} | Time: {result['time']:.2f}s")
+          
+          # Summary
+          print("\n" + "=" * 60)
+          print("📊 SUMMARY")
+          print("=" * 60)
+          success = sum(1 for r in results if r['status'] != 'ERROR')
+          print(f"Total requests: {len(results)}")
+          print(f"Successful: {success}")
+          print(f"Failed: {len(results) - success}")
+          print(f"Completed at: {datetime.now()}")
+          EOF
