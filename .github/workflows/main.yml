@@ -1,11 +1,9 @@
-  name: Random Server Ping (Advanced)
+name: Keep Server Alive
 
 on:
   schedule:
-    # Multiple cron schedules for more random timing
-    - cron: '0 */2 * * *'   # Every 2 hours
-    - cron: '23 */3 * * *'  # Every 3 hours at :23
-    - cron: '47 */4 * * *'  # Every 4 hours at :47
+    - cron: '0 */3 * * *'
+    - cron: '23 */4 * * *'
   workflow_dispatch:
 
 jobs:
@@ -15,20 +13,19 @@ jobs:
     steps:
       - name: Random Initial Delay
         run: |
-          # Add random delay at start (0-30 minutes)
-          DELAY=$((RANDOM % 1800))
-          echo "Waiting ${DELAY} seconds before starting..."
+          DELAY=$((RANDOM % 1200))
+          echo "Random delay: ${DELAY} seconds"
           sleep $DELAY
       
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: '3.x'
+          python-version: '3.11'
       
-      - name: Install dependencies
+      - name: Install requests
         run: pip install requests
       
-      - name: Hit Random Endpoints with Random Timing
+      - name: Hit Random Endpoints
         run: |
           python - <<'EOF'
           import requests
@@ -38,81 +35,66 @@ jobs:
 
           BASE_URL = "https://taskback360.onrender.com"
           
-          def get_random_endpoints():
-              """Generate random list of endpoints"""
-              static_endpoints = [
-                  "/auth/signin",
-                  "/tasks/getUserProjectTasks",
-                  "/auth/getUserImage",
-              ]
-              
-              # Add dynamic project tasks endpoints
-              dynamic_endpoints = [
-                  f"/tasks/getProjectTasks/{random.randint(0, 10)}"
-                  for _ in range(random.randint(2, 5))
-              ]
-              
-              all_endpoints = static_endpoints + dynamic_endpoints
-              random.shuffle(all_endpoints)
-              return all_endpoints
+          STATIC_ENDPOINTS = [
+              "/auth/signin",
+              "/tasks/getUserProjectTasks",
+              "/auth/getUserImage",
+          ]
           
-          def make_request(url):
-              """Make HTTP request with error handling"""
+          def get_endpoints():
+              endpoints = STATIC_ENDPOINTS.copy()
+              for _ in range(random.randint(2, 4)):
+                  project_id = random.randint(0, 10)
+                  endpoints.append(f"/tasks/getProjectTasks/{project_id}")
+              random.shuffle(endpoints)
+              return endpoints
+          
+          def ping_endpoint(url):
               headers = {
-                  'User-Agent': 'GitHub-Actions-Bot/1.0',
+                  'User-Agent': 'Mozilla/5.0 (GitHub Actions Keep-Alive Bot)',
                   'Accept': 'application/json'
               }
               
               try:
+                  start = time.time()
                   response = requests.get(url, headers=headers, timeout=30)
-                  return {
-                      'url': url,
-                      'status': response.status_code,
-                      'time': response.elapsed.total_seconds()
-                  }
+                  duration = time.time() - start
+                  
+                  status_icon = "OK" if response.status_code < 400 else "WARN"
+                  print(f"[{status_icon}] [{response.status_code}] {url} ({duration:.2f}s)")
+                  return True
+                  
+              except requests.exceptions.Timeout:
+                  print(f"[TIMEOUT] {url}")
+                  return False
               except Exception as e:
-                  return {
-                      'url': url,
-                      'status': 'ERROR',
-                      'error': str(e)
-                  }
+                  print(f"[ERROR] {url}: {str(e)}")
+                  return False
           
-          # Main execution
-          print(f"🚀 Starting random server ping at {datetime.now()}")
-          print("=" * 60)
+          print("=" * 70)
+          print(f"Server Keep-Alive Started: {datetime.now().strftime('%Y-%m-%d %H:%M:%S UTC')}")
+          print("=" * 70)
           
-          endpoints = get_random_endpoints()
-          num_requests = random.randint(3, len(endpoints))
-          selected = random.sample(endpoints, num_requests)
+          all_endpoints = get_endpoints()
+          num_requests = random.randint(3, 6)
+          selected_endpoints = random.sample(all_endpoints, min(num_requests, len(all_endpoints)))
           
-          print(f"Selected {num_requests} random endpoints to hit\n")
+          print(f"\nWill ping {len(selected_endpoints)} random endpoints:\n")
           
-          results = []
-          for i, endpoint in enumerate(selected, 1):
+          success_count = 0
+          
+          for i, endpoint in enumerate(selected_endpoints, 1):
               url = f"{BASE_URL}{endpoint}"
               
-              # Random delay between requests (2-15 seconds)
               if i > 1:
-                  delay = random.randint(2, 15)
-                  print(f"⏳ Waiting {delay}s...")
+                  delay = random.randint(3, 12)
                   time.sleep(delay)
               
-              print(f"\n[{i}/{num_requests}] Hitting: {url}")
-              result = make_request(url)
-              results.append(result)
-              
-              if result['status'] == 'ERROR':
-                  print(f"❌ Error: {result['error']}")
-              else:
-                  print(f"✅ Status: {result['status']} | Time: {result['time']:.2f}s")
+              if ping_endpoint(url):
+                  success_count += 1
           
-          # Summary
-          print("\n" + "=" * 60)
-          print("📊 SUMMARY")
-          print("=" * 60)
-          success = sum(1 for r in results if r['status'] != 'ERROR')
-          print(f"Total requests: {len(results)}")
-          print(f"Successful: {success}")
-          print(f"Failed: {len(results) - success}")
-          print(f"Completed at: {datetime.now()}")
+          print("\n" + "=" * 70)
+          print(f"Summary: {success_count}/{len(selected_endpoints)} successful")
+          print(f"Completed: {datetime.now().strftime('%Y-%m-%d %H:%M:%S UTC')}")
+          print("=" * 70)
           EOF
